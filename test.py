@@ -1,30 +1,50 @@
-import scrapy
-import time
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
+import pytest
+import asyncio
+import httpx
+from Flask_Requests_Html import app, fetch_page, extract_job_links
 
-class ComputerFuturesSpider(scrapy.Spider):
-    name = "computerfutures"
-    start_urls = ["https://dummyjson.com/docs/products/"]
+BASE_URL = "http://127.0.0.1:8000"
 
-    def __init__(self, *args, **kwargs):
-        super(ComputerFuturesSpider, self).__init__(*args, **kwargs)
-        options = webdriver.ChromeOptions()
-        options.headless = True  # Run in headless mode
-        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+@pytest.fixture
+def test_client():
+    """Fixture to provide a test client for the Flask app."""
+    return httpx.Client(base_url=BASE_URL)
 
-    def parse(self, response):
-        self.driver.get(response.url)
-        time.sleep(5)  # Wait for the page to load
+@pytest.mark.asyncio
+async def test_fetch_page():
+    url = "https://www.computerfutures.com/en-gb/find-a-job/all-jobs/"
+    html = await fetch_page(url)
+    
+    assert html is not None
+    assert "<html" in html.lower()
 
-        try:
-            page_title = self.driver.find_element(By.CLASS_NAME, "docs-title").text.strip()
-        except Exception:
-            page_title = "N/A"
-        
-        yield {"page_title": page_title}
+@pytest.mark.asyncio
+async def test_extract_job_links():
+    sample_html = '''
+        <html>
+        <body>
+            <a href="/job/software-developer">Software Developer</a>
+            <a href="/job/data-scientist">Data Scientist</a>
+        </body>
+        </html>
+    '''
+    job_links = await extract_job_links(sample_html)
 
-    def closed(self, reason):
-        self.driver.quit()
+    assert len(job_links) == 2
+    assert job_links[0] == "https://www.computerfutures.com/job/software-developer"
+    assert job_links[1] == "https://www.computerfutures.com/job/data-scientist"
+
+def test_scrape_jobs_valid_country(test_client):
+    response = test_client.get("/api/scrape-jobs?country=united kingdom")
+    
+    assert response.status_code == 200
+    json_data = response.json()
+    assert "jobs" in json_data
+    assert isinstance(json_data["jobs"], list)
+
+def test_scrape_jobs_invalid_country(test_client):
+    response = test_client.get("/api/scrape-jobs?country=unknownland")
+    
+    assert response.status_code == 400
+    json_data = response.json()
+    assert "error" in json_data
