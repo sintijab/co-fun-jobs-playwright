@@ -1,4 +1,4 @@
-FROM python:3.11
+FROM --platform=linux/amd64 python:3.11
 
 WORKDIR /app
 COPY requirements.txt .
@@ -7,6 +7,6 @@ RUN playwright install --with-deps chromium
 
 COPY . .
 
-EXPOSE 8080
+EXPOSE 80
 
-CMD ["python", "app.py"]
+CMD ["gunicorn", "-w", "2", "--timeout", "600", "--graceful-timeout", "120", "-b", "0.0.0.0:80", "app:app"]
